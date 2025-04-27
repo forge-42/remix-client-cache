@@ -1,22 +1,46 @@
-import type { SerializeFrom } from "@remix-run/server-runtime";
 import { useEffect, useState } from "react";
 import React from "react";
 import {
   Await,
   type ClientActionFunctionArgs,
-  type ClientLoaderFunctionArgs,
+  type LoaderFunctionArgs,
   useLoaderData,
   useNavigate,
 } from "react-router";
 
 const map = new Map();
 
+export type ExtendedComponentProps<T> = CachedLoaderDataReturn & T;
+
+export const CacheRoute =
+  (
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    Component: (props: any) => JSX.Element,
+    settings?: CachedLoaderDataProps,
+  ) =>
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  (props: any) => {
+    const { cacheKey, invalidate, ...rest } = useCachedLoaderData(settings);
+    return (
+      <Component
+        {...props}
+        loaderData={rest}
+        invalidate={invalidate}
+        cacheKey={cacheKey}
+      />
+    );
+  };
 export interface CacheAdapter {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   getItem: (key: string) => any | Promise<any>;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   setItem: (key: string, value: any) => Promise<any> | any;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   removeItem: (key: string) => Promise<any> | any;
 }
-
+type Prettify<T> = {
+  [K in keyof T]: T[K];
+} & {};
 export let cache: CacheAdapter = {
   getItem: async (key) => map.get(key),
   setItem: async (key, val) => map.set(key, val),
@@ -34,6 +58,7 @@ const augmentStorageAdapter = (storage: Storage) => {
         return storage.getItem(key);
       }
     },
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     setItem: async (key: string, val: any) =>
       storage.setItem(key, JSON.stringify(val)),
     removeItem: async (key: string) => storage.removeItem(key),
@@ -67,14 +92,14 @@ export const configureGlobalCache = (
   }
 };
 
-export const decacheClientLoader = async <T,>(
+export const decacheClientLoader = async (
   { request, serverAction }: ClientActionFunctionArgs,
   {
     key = constructKey(request),
     adapter = cache,
   }: { key?: string; adapter?: CacheAdapter },
 ) => {
-  const data = await serverAction<T>();
+  const data = await serverAction();
   await adapter.removeItem(key);
   return data;
 };
@@ -85,7 +110,10 @@ type CacheClientLoaderArgs = {
   adapter?: CacheAdapter;
 };
 
-export const cacheClientLoader = async <T,>(
+export const cacheClientLoader = async <
+  T extends ClientLoaderFunctionArgs,
+  TServerLoaderReturn = Awaited<ReturnType<T["serverLoader"]>>,
+>(
   { request, serverLoader }: ClientLoaderFunctionArgs,
   {
     type = "swr",
@@ -97,61 +125,85 @@ export const cacheClientLoader = async <T,>(
     adapter: cache,
   },
 ): Promise<
-  SerializeFrom<T> & {
-    serverData: SerializeFrom<T>;
-    deferredServerData: Promise<SerializeFrom<T>> | undefined;
-    key: string;
-  }
+  Prettify<
+    TServerLoaderReturn & {
+      serverData: TServerLoaderReturn;
+      deferredServerData: Promise<TServerLoaderReturn> | undefined;
+      key: string;
+    }
+  >
 > => {
   const existingData = await adapter.getItem(key);
 
   if (type === "normal" && existingData) {
     return {
       ...existingData,
-      serverData: existingData as SerializeFrom<T>,
+      serverData: existingData,
       deferredServerData: undefined,
       key,
     };
   }
-  const data = existingData ? existingData : await serverLoader();
+  const data: TServerLoaderReturn = existingData
+    ? existingData
+    : await serverLoader();
 
   await adapter.setItem(key, data);
   const deferredServerData = existingData ? serverLoader() : undefined;
+  const dataToReturn: TServerLoaderReturn = data ?? existingData;
+  // @ts-expect-error
   return {
-    ...(data ?? existingData),
-    serverData: data as SerializeFrom<T>,
+    ...dataToReturn,
+    serverData: data,
     deferredServerData,
     key,
   };
 };
 
-export const createClientLoaderCache = (props?: CacheClientLoaderArgs) => {
-  const clientLoader = (args: ClientLoaderFunctionArgs) =>
-    cacheClientLoader(args, props);
+interface ClientLoaderFunctionArgs extends LoaderFunctionArgs {
+  serverLoader: () => unknown;
+}
+export const createClientLoaderCache = <U extends ClientLoaderFunctionArgs>(
+  props?: CacheClientLoaderArgs,
+) => {
+  const clientLoader = (args: U) => cacheClientLoader<U>(args, props);
   clientLoader.hydrate = true;
   return clientLoader;
 };
 
+interface CachedLoaderDataProps {
+  adapter?: CacheAdapter;
+}
+
+interface CachedLoaderDataReturn {
+  cacheKey?: string;
+  invalidate: () => Promise<void>;
+}
+
 export function useCachedLoaderData<T>(
-  { adapter = cache }: { adapter?: CacheAdapter } = { adapter: cache },
+  { adapter = cache }: CachedLoaderDataProps = { adapter: cache },
 ) {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const loaderData = useLoaderData() as any;
   const navigate = useNavigate();
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const [freshData, setFreshData] = useState<any>({
     ...("serverData" in loaderData ? loaderData.serverData : loaderData),
   });
 
   // Unpack deferred data from the server
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     let isMounted = true;
     if (loaderData.deferredServerData) {
       loaderData.deferredServerData
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         .then((newData: any) => {
           if (isMounted) {
             adapter.setItem(loaderData.key, newData);
             setFreshData(newData);
           }
         })
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         .catch((e: any) => {
           const res = e instanceof Response ? e : undefined;
           if (res && res.status === 302) {
@@ -168,6 +220,7 @@ export function useCachedLoaderData<T>(
   }, [loaderData]);
 
   // Update the cache if the data changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (
       loaderData.serverData &&
@@ -182,10 +235,7 @@ export function useCachedLoaderData<T>(
     ...freshData,
     cacheKey: loaderData.key,
     invalidate: () => invalidateCache(loaderData.key),
-  } as SerializeFrom<T> & {
-    cacheKey?: string;
-    invalidate: () => Promise<void>;
-  };
+  } as T & CachedLoaderDataReturn;
 }
 
 const constructKey = (request: Request) => {
@@ -203,21 +253,22 @@ export const invalidateCache = async (key: string | string[]) => {
 export const useCacheInvalidator = () => ({
   invalidateCache,
 });
-
 export function useSwrData<T>({
   serverData,
   deferredServerData,
   ...args
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 }: any) {
   return function SWR({
     children,
   }: {
-    children: (data: SerializeFrom<T>) => React.ReactElement;
+    children: (data: T) => React.ReactElement;
   }) {
     return (
       <>
         {deferredServerData ? (
           <React.Suspense fallback={children(serverData)}>
+            {/* biome-ignore lint/suspicious/noExplicitAny: <explanation> */}
             <Await resolve={deferredServerData}>{children as any}</Await>
           </React.Suspense>
         ) : (

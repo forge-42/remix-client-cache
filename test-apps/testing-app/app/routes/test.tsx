@@ -42,6 +42,7 @@ export default function RouteComponent() {
   const navigate = useNavigate();
   return (
     <div>
+      {/* biome-ignore lint/a11y/useButtonType: <explanation> */}
       <button onClick={() => navigate("/")}>Test</button>
     </div>
   );

@@ -7,11 +7,13 @@ import {
 } from "react-router";
 
 import {
+  CacheRoute,
   cacheClientLoader,
   createCacheAdapter,
   useCachedLoaderData,
   useSwrData,
 } from "remix-client-cache";
+import type { Route } from "./+types/user.$user";
 
 const { adapter } = createCacheAdapter(() => localStorage);
 
@@ -26,19 +28,17 @@ export const loader = async ({ params }: LoaderFunctionArgs) => {
 
 // Caches the loader data into memory
 export const clientLoader = async (args: ClientLoaderFunctionArgs) =>
-  cacheClientLoader<typeof loader>(args, {
+  cacheClientLoader<Route.ClientLoaderArgs>(args, {
     adapter,
   });
 
 // make sure you turn this flag on
 clientLoader.hydrate = true;
 
-export default function Index() {
+export default CacheRoute(function Index({ loaderData }: Route.ComponentProps) {
   // The data is automatically cached for you and hot swapped
-  const loaderData = useCachedLoaderData<typeof clientLoader>();
-
-  const { user, serverData, deferredServerData } = loaderData;
-  const SWR = useSwrData<typeof clientLoader>(loaderData);
+  const { user } = loaderData;
+  const SWR = useSwrData<Route.ComponentProps["loaderData"]>(loaderData);
   const navigate = useNavigate();
 
   return (
@@ -54,6 +54,7 @@ export default function Index() {
               <hr />
               {data.user.website} <hr />
               {data.user.description}
+              {/* biome-ignore lint/a11y/useButtonType: <explanation> */}
               <button
                 onClick={() =>
                   navigate(`/user/${Math.round(Math.random() * 10) + 1}`)
@@ -71,6 +72,7 @@ export default function Index() {
       <hr />
       {user.website} <hr />
       {user.description}
+      {/* biome-ignore lint/a11y/useButtonType: <explanation> */}
       <button
         onClick={() => navigate(`/user/${Math.round(Math.random() * 10) + 1}`)}
       >
@@ -78,4 +80,4 @@ export default function Index() {
       </button>
     </div>
   );
-}
+});

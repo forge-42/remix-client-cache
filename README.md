@@ -7,15 +7,10 @@
 ![npm](https://img.shields.io/npm/dm/remix-client-cache?style=plastic) 
 ![GitHub top language](https://img.shields.io/github/languages/top/Code-Forge-Net/remix-client-cache?style=plastic) 
 
-<img style="display: block; margin: 0 auto;" src="./assets/remix-cache.png" height="300px" align="middle" />
-
-# Important information
-
-This library is now a part of the React Router ecosystem and runs on top of React Router. It should be compatible with remix.run but if you're having issues version
-1.1.0 is the last version that will work with remix.run.
+<img style="display: block; margin: 0 auto;" src="./assets/remix-cache.png" height="300px" align="middle" /> 
 
 
-remix-client-cache is a powerful and lightweight library made for Remix.run to cache your server loader data on the client using clientLoaders.
+remix-client-cache is a powerful and lightweight library made for react-router v7 framework mode to cache your server loader data on the client using clientLoaders.
 
 By default it uses the stale while revalidate strategy and hot swaps your stale info once loaded from the server. It also allows you to invalidate the cache for a specific key or multiple keys.
 
@@ -25,40 +20,41 @@ It comes with a default adapter that uses in memory storage to cache your data.
 
 First party support for localStorage, sessionStorage and localforage packages. You can just provide them as the argument to `configureGlobalCache`.
 
+# Important information
+
+This library is now a part of the React Router ecosystem and runs on top of React Router. It should be compatible with remix.run but if you're having issues version
+1.1.0 is the last version that will work with remix.run.
+
 ## Install
 
-    npm install remix-client-cache
+```bash
+npm install remix-client-cache
+```
 
 ## Basic usage
 
 Here is an example usage of remix-client-cache with the default in memory adapter.
 
-```tsx
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { ClientLoaderFunctionArgs } from "@remix-run/react";
+```tsx 
+import type { Route } from "./+types/_index";
+import { createClientLoaderCache, CacheRoute } from "remix-client-cache";
 
-import { cacheClientLoader, useCachedLoaderData } from "remix-client-cache";
-
-export const loader = async ({ params }: LoaderFunctionArgs) => {
+// Some slow server loader
+export const loader = async ({ params }: Route.LoaderArgs) => {
   const response = await fetch(
     `https://jsonplaceholder.typicode.com/users/${params.user}`
   );
   const user = await response.json();
   await new Promise((resolve) => setTimeout(resolve, 1000));
-  return json({ user: { ...user, description: Math.random() } });
+  return { user: { ...user, description: Math.random() } };
 };
 
-
 // Caches the loader data on the client
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader(args);
-  
-// make sure you turn this flag on
-clientLoader.hydrate = true;
+export const clientLoader = createClientLoaderCache<Route.ClientLoaderArgs>(); 
 
-export default function Index() {
   // The data is automatically cached for you and hot swapped when refetched
-  const { user } = useCachedLoaderData<typeof loader>(); 
-
+export default CacheRoute(function Index({ loaderData }: Route.LoaderData) {
+  const { user } = loaderData; 
   return (
     <div>
       {user.name} <hr /> {user.email}
@@ -69,7 +65,7 @@ export default function Index() {
       {user.description} 
     </div>
   );
-}
+})
 
 ```
 
@@ -86,7 +82,7 @@ The `cacheLoaderData` will use the default memory cache adapter that comes with 
 
 ```ts
 // Inside your entry.client.tsx file 
-import { RemixBrowser } from "@remix-run/react";
+import { HydratedRouter } from "react-router/dom"
 import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 
@@ -99,7 +95,7 @@ startTransition(() => {
   hydrateRoot(
     document,
     <StrictMode>
-      <RemixBrowser />
+      <HydratedRouter />
     </StrictMode>
   );
 });
@@ -110,15 +106,15 @@ You can use the `configureGlobalCache` function to override the libraries defaul
 
 If you want to have a per route adapter you can use the `createCacheAdapter` to create an adapter and provide it to your hooks and functions.
 
-```ts
+```tsx
 
 import { createCacheAdapter, useCachedLoaderData } from "remix-client-cache";
+import type { Route } from "./+types/_index";
 
 const { adapter } = createCacheAdapter(() => localStorage); // uses localStorage as the cache adapter
 
-
 // Caches the loader data on the client
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader(args, { 
+export const clientLoader = (args: Route.ClientLoaderArgs) => cacheClientLoader(args, { 
   // We pass our custom adapter to the clientLoader
   adapter
 });
@@ -142,8 +138,7 @@ export default function Index() {
       {user.description} 
     </div>
   );
-}
-
+} 
 
 ```
 
@@ -189,6 +184,32 @@ const { adapter } = createCacheAdapter(() => new DatabaseAdapter()); // uses you
 
 ## API's
 
+### CacheRoute
+Wrapper function that wraps your component and provides the loader data to it. It takes two arguments, the component that is wrapped as the first one, and the config options as the second (like the adapter to use). 
+
+```tsx
+import { CacheRoute, createClientLoaderCache } from "remix-client-cache";
+import type { Route } from "./+types/_index";
+
+// Caches the loader data on the client
+export const clientLoader = createClientLoaderCache<Route.ClientLoaderArgs>(); 
+
+// Wraps the component and provides the loader data to it that gets hot swapped behind the scenes
+export default CacheRoute(function Index({ loaderData }: Route.LoaderData) {
+  const { user } = loaderData; 
+  return (
+    <div>
+      {user.name} <hr /> {user.email}
+      <hr />
+      {user.username}
+      <hr />
+      {user.website} <hr />
+      {user.description} 
+    </div>
+  );
+})
+```
+
 ### createCacheAdapter
 
 Function that creates a cache adapter and returns it. It takes one argument, the `adapter` that is used to store the data. 
@@ -222,20 +243,20 @@ It takes two arguments, the first one is the `ClientLoaderFunctionArgs` object t
  
 
 ```tsx
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { ClientLoaderFunctionArgs } from "@remix-run/react"; 
+ 
 import { cacheClientLoader, useCachedLoaderData } from "remix-client-cache";
+import type { Route } from "./+types/_index";
 
-export const loader = async ({ params }: LoaderFunctionArgs) => {
+export const loader = async ({ params }: Route.LoaderArgs) => {
   const response = await fetch(
     `https://jsonplaceholder.typicode.com/users/${params.user}`
   );
   const user = await response.json();
   await new Promise((resolve) => setTimeout(resolve, 1000));
-  return json({ user: { ...user, description: Math.random() } });
+  return { user: { ...user, description: Math.random() } };
 };
 
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader(args, {
+export const clientLoader = (args: Route.ClientLoaderArgs) => cacheClientLoader(args, {
   type: "swr", // default is swr, can also be set to normal
   key: "/user/1" // default is the current route path including search params and hashes
   adapter: () => localStorage // default is the in memory adapter, can be anything your wish
@@ -250,11 +271,12 @@ Creates everything needed to cache the data via clientLoader, behind the scenes 
 
 ```tsx
 import { createClientLoaderCache, cacheClientLoader } from "remix-client-cache";
+import type { Route } from "./+types/_index";
 
 export const clientLoader = createClientLoaderCache(); 
 
 // above is equivalent to:
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader(args);
+export const clientLoader = (args: Route.ClientLoaderArgs) => cacheClientLoader<Route.ClientLoaderArgs>(args);
 clientLoader.hydrate = true;
 ```
 
@@ -263,20 +285,19 @@ clientLoader.hydrate = true;
 Used to remove the data that is piped from the loader to your component using the `clientLoader` export. 
 
 ```tsx
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { ClientLoaderFunctionArgs } from "@remix-run/react"; 
 import { decacheClientLoader, useCachedLoaderData } from "remix-client-cache";
+import type { Route } from "./+types/_index";
 
-export const loader = async ({ params }: LoaderFunctionArgs) => {
+export const loader = async ({ params }: Route.LoaderArgs) => {
   const response = await fetch(
     `https://jsonplaceholder.typicode.com/users/${params.user}`
   );
   const user = await response.json();
   await new Promise((resolve) => setTimeout(resolve, 1000));
-  return json({ user: { ...user, description: Math.random() } });
+  return { user: { ...user, description: Math.random() } };
 };
 // The data is cached here
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader;
+export const clientLoader = createClientLoaderCache<Route.ClientLoaderArgs>();
 clientLoader.hydrate = true;
 // It is de-cached after a successful action submission via the clientAction export
 export const clientAction = decacheClientLoader;
@@ -296,9 +317,10 @@ the `cacheClientLoader` is augmented to work with `useCachedLoaderData` in mind 
 
 ```tsx
 import { useCachedLoaderData } from "remix-client-cache";
+import type { Route } from "./+types/_index";
 
 // Must be used together with cacheClientLoader
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader(args, "swr");
+export const clientLoader = (args: Route.ClientLoaderArgs) => cacheClientLoader<Route.ClientLoaderArgs>(args, "swr");
 clientLoader.hydrate = true;
 
 export default function Index() {
@@ -329,8 +351,9 @@ Hook used to get an SWR component that hot swaps the data for you. It takes one 
 
 ```tsx
 import { useCachedLoaderData, useSwrData } from "remix-client-cache";
+import type { Route } from "./+types/_index";
 
-export const clientLoader = (args: ClientLoaderFunctionArgs) => cacheClientLoader(args);
+export const clientLoader = (args: Route.ClientLoaderArgs) => cacheClientLoader<Route.ClientLoaderArgs>(args);
 clientLoader.hydrate = true;
 
 export default function Index() {
@@ -390,6 +413,13 @@ export default function Index() {
   );
 }
 ``` 
+
+## Migration from v2 to v3
+
+Some of the previous functions that didn't require type info now require `Route.ClientLoaderArgs` type info. Providing this info should be enough to get you up and running.
+
+ 
+
 
 ## Support 
 
